@@ -1,6 +1,11 @@
 @tool
 extends EditorPlugin
 
+# ---  shortcut settings!!!
+var shortcut_key = KEY_F
+var shortcut_ctrl_pressed = true
+# ---
+
 var popup: PopupPanel
 var line_edit: LineEdit
 var list_view: ItemList
@@ -12,15 +17,13 @@ var filtered_scenes: Array = []
 func _enter_tree() -> void:
 	set_process_unhandled_input(true)
 
-	# Shortcut (Ctrl + f)
 	shortcut = Shortcut.new()
 	var key_event = InputEventKey.new()
-	key_event.keycode = KEY_F
-	key_event.ctrl_pressed = true
+	key_event.keycode = shortcut_key
+	key_event.ctrl_pressed = shortcut_ctrl_pressed
 	key_event.command_or_control_autoremap = true
 	shortcut.events = [key_event]
 
-	# UI
 	popup = PopupPanel.new()
 	popup.size = Vector2(400, 300)
 
@@ -79,13 +82,63 @@ func _open_popup() -> void:
 	line_edit.grab_focus()
 
 
+# The .tscn doesn't matter for fuzzy matching
+func _normalize_scene_name(path: String) -> String:
+	var name: String = path.get_file()
+	if name.ends_with(".tscn"):
+		name = name.substr(0, name.length() - 5)
+	return name.to_lower()
+
+
+func fuzzy_scoring(target: String, query: String) -> float:
+	var t: String = target.to_lower()
+	var q: String = query.to_lower()
+	var t_len: int = t.length()
+	var q_len: int = q.length()
+	if q_len == 0:
+		return 0.0
+	var score: float = 0.0
+	var t_idx: int = 0
+	var q_idx: int = 0
+	var consecutive: int = 0
+	var first_match_bonus: float = 0.0
+
+	while t_idx < t_len and q_idx < q_len:
+		if t[t_idx] == q[q_idx]:
+			var s: float = 1.0
+			if consecutive > 0:
+				s += consecutive * 2.0
+			consecutive += 1
+			# bonus for match at start of word (after underscore or first char)
+			if t_idx == 0 or t[t_idx - 1] in ["_", " "]:
+				s += 2.0
+			# bonus for earlier positions in string (generally sensible, I think, though not in every case)
+			s += 2.0 * (1.0 - float(t_idx) / float(t_len))
+			score += s
+			if first_match_bonus == 0.0:
+				first_match_bonus = s
+
+			q_idx += 1
+		else:
+			consecutive = 0
+		t_idx += 1
+	# penalize if query wasn't fully matched
+	if q_idx < q_len:
+		score *= 0.25
+	return score
+
+
+func _compare_scores_desc(a, b) -> int:
+	return float(a["score"]) > float(b["score"])  # castring isn't actually neccessary here, for this impl., but it's safer, I guess
+
+
 func _refresh_scene_list() -> void:
 	list_view.clear()
 	opened_scenes = EditorInterface.get_open_scenes()
 	filtered_scenes = opened_scenes.duplicate()
 
 	for path in filtered_scenes:
-		list_view.add_item(path.get_file())
+		list_view.add_item(_normalize_scene_name(path.get_file()))  # I don't know whether it's better to show with .tscn or not
 
 	if list_view.item_count > 0:  # TODO: instead, maybe preserve selection if the curent item remains in the filtered set (doesn't really matter)
 		list_view.select(0)
@@ -95,10 +148,27 @@ func _on_text_changed(new_text: String) -> void:
 	list_view.clear()
 	filtered_scenes.clear()
 
-	for path in opened_scenes:
-		if new_text == "" or path.to_lower().find(new_text.to_lower()) != -1:
+	if new_text == "":
+		for path in opened_scenes:
 			filtered_scenes.append(path)
-			list_view.add_item(path.get_file())
+			list_view.add_item(_normalize_scene_name(path.get_file()))
+	else:
+		var q: String = new_text.to_lower()
+		var scored: Array = []
+
+		for path in opened_scenes:
+			var name: String = _normalize_scene_name(path)
+			var score: float = fuzzy_scoring(name, q)
+			scored.append(
+				{"path": path, "name": _normalize_scene_name(path.get_file()), "score": score}
+			)
+
+		# sort descending (higher = better)
+		scored.sort_custom(Callable(self, "_compare_scores_desc"))
+
+		for entry in scored:
+			filtered_scenes.append(entry["path"])
+			list_view.add_item(entry["name"])
 
 	if list_view.item_count > 0:
 		list_view.select(0)
