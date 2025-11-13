@@ -8,4 +8,4 @@ Install and enable the plugin. Then, in the editor, pressing `<Ctrl-f>` opens th
 
 Right now the shortcut is fairly hardcoded. If you don't want to use `<Ctrl-f>` to launch the popup, you can change the shortcut definition at the top of the script at `res://addons/slippery_scenes/slippery_scenes.gd`
 
-[![Demo Video](https://raw.githubusercontent.com/emil-ke/slippery-scenes-godot/main/public/thump.png)](https://raw.githubusercontent.com/emil-ke/slippery-scenes-godot/main/public/slippery_scenes_demo.mp4)
+https://github.com/user-attachments/assets/a0f3bc92-01af-4034-bb98-c6cd18a69761
